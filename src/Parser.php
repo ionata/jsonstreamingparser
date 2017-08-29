@@ -106,6 +106,16 @@ class Parser
     /**
      * @var bool
      */
+    private $pauseParsing = false;
+
+    /**
+     * @var array
+     */
+    private $pauseData = null;
+
+    /**
+     * @var bool
+     */
     private $utfBom = 0;
 
     /**
@@ -143,26 +153,55 @@ class Parser
 
     public function parse()
     {
+        if ($this->stopParsing || $this->pauseParsing) {
+            throw new \Exception("Parse after stop or pause");
+        }
+
         $this->lineNumber = 1;
         $this->charNumber = 1;
+
+        $this->resume();
+    }
+
+    public function resume()
+    {
+        if ($this->stopParsing) {
+            throw new \Exception("Resume after stop");
+        }
+
+        $getLine = true;
+        $lineIndex = 0;
+        if ($this->pauseParsing) {
+            list($line, $lineIndex, $ended) = $this->pauseData;
+            $this->pauseData = null;
+            $getLine = false;
+        }
+        $this->pauseParsing = false;
         $eof = false;
 
         while (!feof($this->stream) && !$eof) {
-            $pos = ftell($this->stream);
-            $line = stream_get_line($this->stream, $this->bufferSize, $this->lineEnding);
-            $ended = (bool)(ftell($this->stream) - strlen($line) - $pos);
+            if ($getLine) {
+                $pos = ftell($this->stream);
+                $line = stream_get_line($this->stream, $this->bufferSize, $this->lineEnding);
+                $ended = (bool)(ftell($this->stream) - strlen($line) - $pos);
+                $eof = ftell($this->stream) == $pos;
+            }
+            $getLine = true;
             // if we're still at the same place after stream_get_line, we're done
-            $eof = ftell($this->stream) == $pos;
 
             $byteLen = strlen($line);
-            for ($i = 0; $i < $byteLen; $i++) {
+            for ($i = $lineIndex; $i < $byteLen; $i++) {
+                $lineIndex = 0;
                 if ($this->emitFilePosition) {
                     $this->listener->filePosition($this->lineNumber, $this->charNumber);
                 }
                 $this->consumeChar($line[$i]);
                 $this->charNumber++;
 
-                if ($this->stopParsing) {
+                if ($this->pauseParsing) {
+                    $this->pauseData = [$line, $i+1, $ended];
+                }
+                if ($eof || $this->stopParsing || $this->pauseParsing) {
                     return;
                 }
             }
@@ -173,11 +212,18 @@ class Parser
             }
 
         }
+
+        $this->stopParsing = true;
     }
 
     public function stop()
     {
         $this->stopParsing = true;
+    }
+
+    public function pause()
+    {
+        $this->pauseParsing = true;
     }
 
     /**
