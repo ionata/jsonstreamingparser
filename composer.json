@@ -35,5 +35,11 @@
       "JsonStreamingParser\\": "src",
       "JsonStreamingParser\\Test\\": "tests"
     }
+  },
+
+  "extra": {
+    "branch-alias": {
+      "dev-master": "6.0.x-dev"
+    }
   }
 }
